@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeductMath - which plan wins?</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f1316; color:#e9eef0; min-height:100vh; }
+  .wrap { max-width:860px; margin:0 auto; padding:28px 20px 80px; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
+  header h1 { font-size:22px; } header h1 span { color:#6fb7f2; }
+  header a { color:#8798a0; text-decoration:none; font-size:14px; }
+  .card { background:#151c22; border:1px solid #29404f; border-radius:12px; padding:18px; margin-bottom:18px; }
+  label { font-size:12px; color:#8798a0; display:block; margin-bottom:4px; }
+  input { background:#0f1316; border:1px solid #33525f; border-radius:8px; color:#e9eef0; padding:9px 10px; font-size:14px; width:100%; }
+  button { background:#6fb7f2; border:none; color:#06182a; font-weight:700; padding:11px 22px; border-radius:9px; font-size:14px; cursor:pointer; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px; align-items:end; }
+  h3 { font-size:14px; color:#b8c6cc; margin-bottom:10px; }
+  .verdict { background:#101d29; border:1px solid #294a5f; border-radius:10px; padding:14px 16px; margin-bottom:14px; font-size:15px; line-height:1.6; }
+  .verdict b { color:#6fb7f2; }
+  .versus { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .opt { background:#0f1316; border:1px solid #29404f; border-radius:10px; padding:16px; }
+  .opt.win { border-color:#6fb7f2; }
+  .opt h4 { font-size:15px; margin-bottom:8px; }
+  .opt .ev { font-size:28px; font-weight:800; color:#fff; }
+  .opt .row { display:flex; justify-content:space-between; font-size:13px; padding:4px 0; border-bottom:1px solid #1b2530; color:#b8c6cc; }
+  .opt .row:last-child { border-bottom:none; }
+  .err { color:#ff8a8a; font-size:13px; margin-top:8px; }
+  .note { color:#5c6a70; font-size:12px; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Deduct<span>Math</span></h1><a href="index.html">home</a></header>
+
+  <div class="card">
+    <h3>Plan A - low deductible</h3>
+    <div class="row2">
+      <div><label>Premium ($/yr)</label><input id="pa" type="number" value="1200"></div>
+      <div><label>Deductible ($)</label><input id="da" type="number" value="500"></div>
+    </div>
+    <h3>Plan B - high deductible</h3>
+    <div class="row2">
+      <div><label>Premium ($/yr)</label><input id="pb" type="number" value="700"></div>
+      <div><label>Deductible ($)</label><input id="db" type="number" value="2500"></div>
+    </div>
+    <h3>Your year</h3>
+    <div class="row3">
+      <div><label>Chance of a claim (%)</label><input id="prob" type="number" step="1" value="10"></div>
+      <div><label>Typical claim size ($)</label><input id="claim" type="number" value="10000"></div>
+      <div><button id="go">Compare</button></div>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="out"></div>
+</div>
+<script src="engine.js"></script>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const IDS = ['pa','da','pb','db','prob','claim'];
+  function usd(x){ return '$' + Math.round(x).toLocaleString('en-US'); }
+
+  function calc(){
+    $('err').textContent = '';
+    const st = {};
+    IDS.forEach(function(id){ st[id] = $(id).value; });
+    try { localStorage.setItem('deductmath', JSON.stringify(st)); } catch(e) {}
+    let r;
+    try {
+      r = DeductMathEngine.compare({ planA: { premium: st.pa, deductible: st.da }, planB: { premium: st.pb, deductible: st.db }, claimProbabilityPct: st.prob, claimAmount: st.claim });
+    } catch(e) { $('err').textContent = e.message; $('out').innerHTML = ''; return; }
+
+    let v;
+    if (r.winner === 'tie') v = 'A true coin flip: at a ' + st.prob + '% claim chance both plans cost the same this year (' + usd(r.evA) + '). Pick by worst case.';
+    else {
+      const wName = r.winner === 'a' ? 'Plan A (low deductible)' : 'Plan B (high deductible)';
+      v = '<b>' + wName + ' wins</b> at a ' + st.prob + '% claim chance: expected cost ' + usd(Math.min(r.evA, r.evB)) + ' vs ' + usd(Math.max(r.evA, r.evB)) + ', saving <b>' + usd(r.savingPerYear) + ' a year</b>.';
+      if (r.breakEvenPct !== null) v += ' The break-even is a ' + r.breakEvenPct + '% claim chance - ' + (st.prob < r.breakEvenPct ? 'below it, the cheaper premium wins; above it, the low deductible wins.' : 'you are above it, where the low deductible earns its premium.');
+    }
+
+    const opt = function(name, plan, evv, worst, oop, win){
+      return '<div class="opt' + (win ? ' win' : '') + '"><h4>' + name + '</h4>'
+        + '<div class="ev">' + usd(evv) + '</div>'
+        + '<div class="row"><span>Premium</span><span>' + usd(plan.premium) + '</span></div>'
+        + '<div class="row"><span>Deductible</span><span>' + usd(plan.deductible) + '</span></div>'
+        + '<div class="row"><span>Out-of-pocket if claim</span><span>' + usd(oop) + '</span></div>'
+        + '<div class="row"><span>Worst case year</span><span>' + usd(worst) + '</span></div></div>';
+    };
+
+    $('out').innerHTML = '<div class="verdict">' + v + '</div>'
+      + '<div class="versus">'
+      + opt('Plan A', { premium: st.pa, deductible: st.da }, r.evA, r.worstCaseA, r.oopA, r.winner === 'a')
+      + opt('Plan B', { premium: st.pb, deductible: st.db }, r.evB, r.worstCaseB, r.oopB, r.winner === 'b')
+      + '</div><div class="card" style="margin-top:14px"><div class="note">Expected cost = premium + claim chance x out-of-pocket (out-of-pocket is the smaller of the claim and the deductible). Worst case = premium + full deductible. If the high plan worst case would break your emergency fund, that settles it regardless of the math.</div></div>';
+  }
+
+  $('go').onclick = calc;
+  document.querySelectorAll('input').forEach(function(el){ el.addEventListener('input', calc); });
+  try {
+    const st = JSON.parse(localStorage.getItem('deductmath') || 'null');
+    if (st) IDS.forEach(function(id){ if (st[id] !== undefined) $(id).value = st[id]; });
+  } catch(e) {}
+  calc();
+})();
+</script>
+</body>
+</html>
